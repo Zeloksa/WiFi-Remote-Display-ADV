@@ -1,7 +1,7 @@
 ![Version](https://img.shields.io/badge/Version-1.0_ADV-blue)
 ![Hardware](https://img.shields.io/badge/Hardware-Cardputer-orange)
 ![Platform](https://img.shields.io/badge/Platform-M5Stack-red)
-![License](https://img.shields.io/badge/License-Open_Source-brightgreen)
+![License](https://img.shields.io/badge/License-CC_BY--NC_4.0-red)
 [![Boosty](https://img.shields.io/badge/Support-Boosty-orange)](https://boosty.to/zeloksa)
 
 # 📡 WiFi Remote Display ADV (V1.0)
