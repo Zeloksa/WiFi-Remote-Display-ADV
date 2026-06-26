@@ -259,7 +259,7 @@ String scanAndSelectWiFi() {
     M5Cardputer.Display.setTextDatum(top_left);
 
     int initial_status = WiFi.scanComplete();
-    if (initial_status == -2) WiFi.scanNetworks(true);
+    if (initial_status < -1) WiFi.scanNetworks(true);
 
     bool force_redraw = true;
 
@@ -282,6 +282,8 @@ String scanAndSelectWiFi() {
                 selected = global_network_count - 1;
                 if (topIndex > selected) topIndex = max(0, selected - 4);
             }
+        } else if (scan_status < -1) {
+            WiFi.scanNetworks(true);
         }
 
         if (force_redraw) {
@@ -613,6 +615,10 @@ void setup() {
             preferences.begin("wifi_cfg", false);
             preferences.clear();
             preferences.end();
+            WiFi.disconnect(true, true);
+            delay(100);
+            WiFi.mode(WIFI_STA);
+            delay(100);
         }
     }
 
@@ -638,6 +644,10 @@ void setup() {
             drawMessage("FAILED", "Connection failed.", "Wrong pass or 5GHz?", RED); 
             delay(2500); 
             ssid = ""; 
+            WiFi.disconnect(true, true);
+            delay(100);
+            WiFi.mode(WIFI_STA);
+            delay(100);
         }
     }
 
