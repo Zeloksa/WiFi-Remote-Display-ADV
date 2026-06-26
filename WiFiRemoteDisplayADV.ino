@@ -8,7 +8,7 @@
 const int udpPort = 1234;
 String ssid = "";
 String password = "";
-int speaker_volume = 15; 
+int speaker_volume = 120; 
 
 WiFiUDP udp;
 USBHIDKeyboard Keyboard;
@@ -47,6 +47,14 @@ String osd_text = "";
 uint32_t osd_color = YELLOW;
 unsigned long osd_timer = 0;
 float current_zoom = 1.0;
+
+#define MAX_NETWORKS 25
+struct WiFiNetInfo { 
+    String ssid; 
+    int rssi; 
+};
+WiFiNetInfo saved_networks[MAX_NETWORKS];
+int global_network_count = 0;
 
 void playSound(int freq, int duration) {
     if (speaker_volume > 0) M5Cardputer.Speaker.tone(freq, duration);
@@ -122,106 +130,124 @@ void showReadyScreen() {
     drawWatermark();
 }
 
-String inputText(String prompt) {
+String inputText(String prompt_ssid) {
     while(M5Cardputer.Keyboard.keysState().enter) { M5Cardputer.update(); delay(10); }
 
     String input_buffer = "";
     M5Cardputer.Display.fillScreen(BLACK);
-    M5Cardputer.Display.setCursor(5, 10);
-    M5Cardputer.Display.setTextColor(YELLOW);
-    M5Cardputer.Display.println("ENTER " + prompt + ":");
-    M5Cardputer.Display.setTextColor(WHITE);
-    M5Cardputer.Display.println("(Press ENTER to confirm)");
-    drawWatermark();
     
-    int startY = M5Cardputer.Display.getCursorY() + 10;
-    M5Cardputer.Display.setCursor(5, startY);
+    M5Cardputer.Display.fillRect(0, 0, 240, 20, PURPLE);
+    M5Cardputer.Display.setTextColor(WHITE);
+    M5Cardputer.Display.setTextDatum(middle_center);
+    M5Cardputer.Display.drawString("ENTER PASSWORD", 120, 10);
+    
+    M5Cardputer.Display.setTextDatum(top_center);
+    M5Cardputer.Display.setTextColor(YELLOW);
+    M5Cardputer.Display.drawString(prompt_ssid, 120, 28);
+    
+    M5Cardputer.Display.fillRect(0, 115, 240, 20, 0x18E3); 
+    M5Cardputer.Display.setTextDatum(middle_center);
+    M5Cardputer.Display.setTextColor(LIGHTGREY);
+    M5Cardputer.Display.setTextSize(1);
+    M5Cardputer.Display.drawString("[ENTER] Confirm   [ESC] Cancel", 120, 125);
+    M5Cardputer.Display.setTextSize(1.5);
+    M5Cardputer.Display.setTextDatum(top_left);
+    
+    M5Cardputer.Display.drawRect(10, 55, 220, 30, LIGHTGREY);
+    int startX = 15;
+    int startY = 62;
+    M5Cardputer.Display.setCursor(startX, startY);
 
     while (true) {
         M5Cardputer.update();
-        if (M5Cardputer.Keyboard.isPressed()) {
-            Keyboard_Class::KeysState status = M5Cardputer.Keyboard.keysState();
-            bool changed = false;
+        if (M5Cardputer.Keyboard.isChange()) {
+            if (M5Cardputer.Keyboard.isPressed()) {
+                Keyboard_Class::KeysState status = M5Cardputer.Keyboard.keysState();
+                bool changed = false;
 
-            if (status.del && input_buffer.length() > 0) {
-                input_buffer.remove(input_buffer.length() - 1);
-                changed = true;
-            } else {
-                for (auto key_char : status.word) {
-                    input_buffer += key_char;
-                    changed = true;
+                if (M5Cardputer.Keyboard.isKeyPressed('`')) {
+                    while(M5Cardputer.Keyboard.isKeyPressed('`')) { M5Cardputer.update(); delay(10); }
+                    return "[ESC]";
+                } else if (status.del) {
+                    if (input_buffer.length() > 0) {
+                        input_buffer.remove(input_buffer.length() - 1);
+                        changed = true;
+                    }
+                } else if (status.enter) {
+                    while(M5Cardputer.Keyboard.keysState().enter) { M5Cardputer.update(); delay(10); }
+                    return input_buffer;
+                } else {
+                    char new_char = 0;
+                    for (auto c : status.word) { new_char = c; } 
+                    if (new_char != 0) {
+                        input_buffer += new_char;
+                        changed = true;
+                    }
+                }
+
+                if (changed) {
+                    M5Cardputer.Display.fillRect(12, 57, 216, 26, BLACK);
+                    M5Cardputer.Display.setCursor(startX, startY);
+                    M5Cardputer.Display.setTextColor(WHITE);
+                    M5Cardputer.Display.print(input_buffer);
                 }
             }
-
-            if (status.enter) {
-                while(M5Cardputer.Keyboard.keysState().enter) { M5Cardputer.update(); delay(10); }
-                return input_buffer;
-            }
-
-            if (changed) {
-                M5Cardputer.Display.fillRect(0, startY, 240, 50, BLACK);
-                M5Cardputer.Display.setCursor(5, startY);
-                M5Cardputer.Display.print(input_buffer);
-            }
-            delay(150); 
         }
         delay(10);
     }
 }
 
-void drawWiFiList(int network_count, int selected, int topIndex) {
-    M5Cardputer.Display.fillRect(0, 35, 240, 100, BLACK); 
-    for (int i = 0; i < 5 && (topIndex + i) < network_count; ++i) {
+void drawWiFiList(int selected, int topIndex, bool is_scanning) {
+    M5Cardputer.Display.fillRect(0, 25, 240, 110, BLACK); 
+    
+    if (global_network_count == 0) {
+        M5Cardputer.Display.setTextDatum(middle_center);
+        M5Cardputer.Display.setTextColor(LIGHTGREY);
+        M5Cardputer.Display.drawString("Searching for networks...", 120, 65);
+        M5Cardputer.Display.setTextDatum(top_left);
+        return;
+    }
+
+    for (int i = 0; i < 5 && (topIndex + i) < global_network_count; ++i) {
         int idx = topIndex + i;
-        int y = 38 + (i * 18);
+        int y = 28 + (i * 18);
         if (idx == selected) M5Cardputer.Display.fillRect(0, y - 2, 240, 18, DARKGREEN);
         M5Cardputer.Display.setCursor(5, y);
         M5Cardputer.Display.setTextColor(WHITE);
-        M5Cardputer.Display.print(WiFi.SSID(idx));
-        M5Cardputer.Display.print(" ("); M5Cardputer.Display.print(WiFi.RSSI(idx)); M5Cardputer.Display.print("dBm)");
+        M5Cardputer.Display.print(saved_networks[idx].ssid);
+        M5Cardputer.Display.print(" ("); M5Cardputer.Display.print(saved_networks[idx].rssi); M5Cardputer.Display.print("dBm)");
+    }
+
+    if (is_scanning) {
+        M5Cardputer.Display.setTextDatum(bottom_right);
+        M5Cardputer.Display.setTextColor(ORANGE);
+        M5Cardputer.Display.setTextSize(1);
+        M5Cardputer.Display.drawString("Scanning...", 235, 130);
+        M5Cardputer.Display.setTextSize(1.5);
+        M5Cardputer.Display.setTextDatum(top_left);
     }
 }
 
-void updateWiFiCursor(int network_count, int old_sel, int new_sel, int topIndex) {
+void updateWiFiCursor(int old_sel, int new_sel, int topIndex) {
     if (old_sel >= topIndex && old_sel < topIndex + 5) {
-        int y = 38 + ((old_sel - topIndex) * 18);
+        int y = 28 + ((old_sel - topIndex) * 18);
         M5Cardputer.Display.fillRect(0, y - 2, 240, 18, BLACK);
         M5Cardputer.Display.setCursor(5, y);
         M5Cardputer.Display.setTextColor(WHITE);
-        M5Cardputer.Display.print(WiFi.SSID(old_sel));
-        M5Cardputer.Display.print(" ("); M5Cardputer.Display.print(WiFi.RSSI(old_sel)); M5Cardputer.Display.print("dBm)");
+        M5Cardputer.Display.print(saved_networks[old_sel].ssid);
+        M5Cardputer.Display.print(" ("); M5Cardputer.Display.print(saved_networks[old_sel].rssi); M5Cardputer.Display.print("dBm)");
     }
     if (new_sel >= topIndex && new_sel < topIndex + 5) {
-        int y = 38 + ((new_sel - topIndex) * 18);
+        int y = 28 + ((new_sel - topIndex) * 18);
         M5Cardputer.Display.fillRect(0, y - 2, 240, 18, DARKGREEN);
         M5Cardputer.Display.setCursor(5, y);
         M5Cardputer.Display.setTextColor(WHITE);
-        M5Cardputer.Display.print(WiFi.SSID(new_sel));
-        M5Cardputer.Display.print(" ("); M5Cardputer.Display.print(WiFi.RSSI(new_sel)); M5Cardputer.Display.print("dBm)");
+        M5Cardputer.Display.print(saved_networks[new_sel].ssid);
+        M5Cardputer.Display.print(" ("); M5Cardputer.Display.print(saved_networks[new_sel].rssi); M5Cardputer.Display.print("dBm)");
     }
 }
 
 String scanAndSelectWiFi() {
-    drawMessage("SCANNING...", "Searching for networks...", "Please wait (up to 5s)", BLUE);
-    
-    WiFi.mode(WIFI_STA);
-    WiFi.disconnect(true, true);
-    delay(200);
-    WiFi.mode(WIFI_OFF); 
-    delay(200);
-    WiFi.mode(WIFI_STA); 
-    delay(200);
-    
-    int network_count = WiFi.scanNetworks();
-    if (network_count == 0 || network_count == -1) {
-        drawMessage("NO NETWORKS", "Nothing found or error.", "Press ENTER to rescan", RED);
-        while(true) {
-            M5Cardputer.update();
-            if (M5Cardputer.Keyboard.isPressed() && M5Cardputer.Keyboard.keysState().enter) return "";
-            delay(50);
-        }
-    }
-
     int selected = 0;
     int topIndex = 0;
     
@@ -230,43 +256,70 @@ String scanAndSelectWiFi() {
     M5Cardputer.Display.setTextColor(WHITE);
     M5Cardputer.Display.setTextDatum(middle_center);
     M5Cardputer.Display.drawString("SELECT WIFI (W/S, ENTER)", 120, 10);
-    
-    M5Cardputer.Display.setTextColor(ORANGE);
-    M5Cardputer.Display.drawString("Use SAME WiFi as PC!", 120, 27);
     M5Cardputer.Display.setTextDatum(top_left);
 
-    drawWiFiList(network_count, selected, topIndex); 
+    int initial_status = WiFi.scanComplete();
+    if (initial_status == -2) WiFi.scanNetworks(true);
+
+    bool force_redraw = true;
 
     while (true) {
         M5Cardputer.update();
-        if (M5Cardputer.Keyboard.isPressed()) {
-            Keyboard_Class::KeysState status = M5Cardputer.Keyboard.keysState();
-            bool moveUp = false, moveDown = false;
-            
-            for (auto key_char : status.word) {
-                if (key_char == 'w' || key_char == 'W' || key_char == ';') moveUp = true;
-                if (key_char == 's' || key_char == 'S' || key_char == '.') moveDown = true;
+        int scan_status = WiFi.scanComplete();
+        
+        if (scan_status >= 0) {
+            global_network_count = min(scan_status, MAX_NETWORKS);
+            for (int i = 0; i < global_network_count; i++) {
+                saved_networks[i].ssid = WiFi.SSID(i);
+                saved_networks[i].rssi = WiFi.RSSI(i);
             }
             
-            if (moveUp || moveDown) {
-                int old_selected = selected;
-                if (moveUp) { selected--; if (selected < 0) selected = network_count - 1; }
-                if (moveDown) { selected++; if (selected >= network_count) selected = 0; }
+            WiFi.scanDelete();
+            WiFi.scanNetworks(true); 
+            force_redraw = true;
+            
+            if (selected >= global_network_count && global_network_count > 0) {
+                selected = global_network_count - 1;
+                if (topIndex > selected) topIndex = max(0, selected - 4);
+            }
+        }
+
+        if (force_redraw) {
+            drawWiFiList(selected, topIndex, (scan_status == -1));
+            force_redraw = false;
+        }
+
+        if (M5Cardputer.Keyboard.isChange()) {
+            if (M5Cardputer.Keyboard.isPressed()) {
+                Keyboard_Class::KeysState status = M5Cardputer.Keyboard.keysState();
+                bool moveUp = false, moveDown = false;
                 
-                if (selected < topIndex || selected >= topIndex + 5) {
-                    if (selected < topIndex) topIndex = selected;
-                    if (selected >= topIndex + 5) topIndex = selected - 4;
-                    drawWiFiList(network_count, selected, topIndex);
-                } else {
-                    updateWiFiCursor(network_count, old_selected, selected, topIndex);
+                for (auto key_char : status.word) {
+                    if (key_char == 'w' || key_char == 'W' || key_char == ';') moveUp = true;
+                    if (key_char == 's' || key_char == 'S' || key_char == '.') moveDown = true;
+                }
+                
+                if (global_network_count > 0) {
+                    if (moveUp || moveDown) {
+                        int old_selected = selected;
+                        if (moveUp) { selected--; if (selected < 0) selected = global_network_count - 1; }
+                        if (moveDown) { selected++; if (selected >= global_network_count) selected = 0; }
+                        
+                        if (selected < topIndex || selected >= topIndex + 5) {
+                            if (selected < topIndex) topIndex = selected;
+                            if (selected >= topIndex + 5) topIndex = selected - 4;
+                            force_redraw = true;
+                        } else {
+                            updateWiFiCursor(old_selected, selected, topIndex);
+                        }
+                    }
+                    
+                    if (status.enter) { 
+                        while(M5Cardputer.Keyboard.keysState().enter) { M5Cardputer.update(); delay(10); }
+                        return saved_networks[selected].ssid; 
+                    }
                 }
             }
-            
-            if (status.enter) { 
-                while(M5Cardputer.Keyboard.keysState().enter) { M5Cardputer.update(); delay(10); }
-                return WiFi.SSID(selected); 
-            }
-            delay(120); 
         }
         delay(10);
     }
@@ -547,6 +600,7 @@ void setup() {
     delay(200);
     WiFi.mode(WIFI_STA);
     delay(200);
+    WiFi.scanNetworks(true); 
 
     if (loadWifiConfig()) {
         drawMessage("CONNECTING...", "Saved SSID:", ssid, BLUE); 
@@ -565,7 +619,14 @@ void setup() {
     while (!isConnected) {
         ssid = scanAndSelectWiFi();
         if (ssid == "") continue; 
-        password = inputText("PASSWORD");
+        
+        password = inputText(ssid);
+        
+        if (password == "[ESC]") {
+            ssid = ""; 
+            continue;
+        }
+
         drawMessage("CONNECTING...", "SSID: " + ssid, "Please wait...", BLUE);
         WiFi.begin(ssid.c_str(), password.c_str());
         int attempts = 0;
@@ -574,8 +635,9 @@ void setup() {
             isConnected = true; 
             saveWifiConfig(); 
         } else { 
-            drawMessage("FAILED", "Wrong password.", "Try again.", RED); 
+            drawMessage("FAILED", "Connection failed.", "Wrong pass or 5GHz?", RED); 
             delay(2500); 
+            ssid = ""; 
         }
     }
 
@@ -659,13 +721,13 @@ void loop() {
             if (M5Cardputer.Keyboard.isKeyPressed('/')) { sendPCCommand("R"); showOSD("PAN RIGHT"); key_pressed = true; }
             
             if (M5Cardputer.Keyboard.isKeyPressed('0')) { 
-                speaker_volume = min(255, speaker_volume + 15); 
+                speaker_volume = min(255, speaker_volume + 25); 
                 M5Cardputer.Speaker.setVolume(speaker_volume); 
                 showOSD("SPK VOL: " + String((speaker_volume * 100) / 255) + "%"); 
                 key_pressed = true; 
             }
             if (M5Cardputer.Keyboard.isKeyPressed('9')) { 
-                speaker_volume = max(0, speaker_volume - 15); 
+                speaker_volume = max(0, speaker_volume - 25); 
                 M5Cardputer.Speaker.setVolume(speaker_volume); 
                 showOSD("SPK VOL: " + String((speaker_volume * 100) / 255) + "%"); 
                 key_pressed = true; 
