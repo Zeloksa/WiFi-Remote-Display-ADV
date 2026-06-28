@@ -27,6 +27,8 @@ int high_fps_streak = 0;
 unsigned long last_quality_change = 0; 
 int current_quality = 50; 
 
+bool is_uk_layout = false;
+
 #define MAX_JPG_SIZE 100000  
 #define MAX_CHUNKS 120       
 #define CHUNK_SIZE 1400      
@@ -429,12 +431,68 @@ bool runOnboarding() {
     M5Cardputer.Display.setTextDatum(top_left);
     if (!waitEnterOrEsc(true)) return false;
 
-    drawMessage("STEP 4: KEYBOARD", "Is PC layout set to", "ENGLISH?", PURPLE);
+step4_start:
+    M5Cardputer.Display.fillScreen(BLACK);
+    M5Cardputer.Display.fillRect(0, 0, 240, 25, PURPLE);
+    M5Cardputer.Display.setTextColor(WHITE);
+    M5Cardputer.Display.setTextDatum(middle_center);
+    M5Cardputer.Display.drawString("STEP 4: KEYBOARD", 120, 12);
+    
+    M5Cardputer.Display.setTextDatum(top_center);
+    M5Cardputer.Display.drawString("Select your PC's", 120, 45);
+    M5Cardputer.Display.setTextColor(YELLOW);
+    M5Cardputer.Display.drawString("English layout type:", 120, 65);
+    
+    M5Cardputer.Display.setTextDatum(bottom_center);
+    M5Cardputer.Display.setTextColor(WHITE);
+    M5Cardputer.Display.drawString("US [ S ]   |   UK [ K ]", 120, 115);
+    M5Cardputer.Display.setTextDatum(top_left);
+    drawWatermark();
+
+    while(M5Cardputer.Keyboard.isPressed()) { M5Cardputer.update(); delay(10); }
+    
+    bool selection_made = false;
+    while (!selection_made) {
+        M5Cardputer.update();
+        if (M5Cardputer.Keyboard.isChange() && M5Cardputer.Keyboard.isPressed()) {
+            Keyboard_Class::KeysState status = M5Cardputer.Keyboard.keysState();
+            if (M5Cardputer.Keyboard.isKeyPressed('`') || status.del) return false;
+            
+            if (M5Cardputer.Keyboard.isKeyPressed('s')) { is_uk_layout = false; selection_made = true; }
+            if (M5Cardputer.Keyboard.isKeyPressed('k')) { is_uk_layout = true; selection_made = true; }
+        }
+        delay(10);
+    }
+
+    M5Cardputer.Display.fillScreen(BLACK);
+    M5Cardputer.Display.fillRect(0, 0, 240, 25, PURPLE);
+    M5Cardputer.Display.setTextColor(WHITE);
+    M5Cardputer.Display.setTextDatum(middle_center);
+    M5Cardputer.Display.drawString("CONFIRM LAYOUT", 120, 12);
+
+    M5Cardputer.Display.setTextDatum(top_center);
+    M5Cardputer.Display.drawString("Is your PC strictly set to", 120, 45);
+    M5Cardputer.Display.setTextColor(ORANGE);
+    M5Cardputer.Display.drawString(is_uk_layout ? "ENGLISH (UK)?" : "ENGLISH (US)?", 120, 65);
+    
     M5Cardputer.Display.setTextDatum(bottom_center);
     M5Cardputer.Display.setTextColor(YELLOW);
-    M5Cardputer.Display.drawString("YES [ENTER]  |  NO [ESC]", 120, 110);
+    M5Cardputer.Display.drawString("YES [ENTER]  |  BACK [ESC]", 120, 115);
     M5Cardputer.Display.setTextDatum(top_left);
-    if (!waitEnterOrEsc(false)) return false; 
+    drawWatermark();
+
+    while(M5Cardputer.Keyboard.isPressed()) { M5Cardputer.update(); delay(10); }
+    
+    bool confirmed = false;
+    while(true) {
+        M5Cardputer.update();
+        Keyboard_Class::KeysState status = M5Cardputer.Keyboard.keysState();
+        if (status.enter) { confirmed = true; break; }
+        if (M5Cardputer.Keyboard.isKeyPressed('`') || status.del) { confirmed = false; break; }
+        delay(10);
+    }
+
+    if (!confirmed) goto step4_start;
 
     M5Cardputer.Display.fillScreen(BLACK);
     M5Cardputer.Display.fillRect(0, 0, 240, 25, 0x0410); 
@@ -531,6 +589,12 @@ while True:
     time.sleep(delay_time)
 "@
 python stream.py; exit)=====");
+
+        if (is_uk_layout) {
+            py.replace("@", "\x01");
+            py.replace("\"", "@");
+            py.replace("\x01", "\"");
+        }
 
         drawMessage("WRITING SCRIPT", "Please wait...", "[ ESC ] to Abort", RED);
         M5Cardputer.Display.drawRect(20, 85, 200, 20, WHITE);
