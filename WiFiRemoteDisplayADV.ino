@@ -742,7 +742,9 @@ void loop() {
         }
 
         if (M5Cardputer.Keyboard.isKeyPressed('g')) {
-            while(udp.parsePacket() > 0) { udp.read(); } 
+            udp.stop();         
+            delay(50);
+            udp.begin(udpPort); 
             
             if (runOnboarding()) {
                 if (injectPayload()) {
@@ -826,7 +828,9 @@ void loop() {
                     currentState = READY;
                     pc_port = 0; 
                     
-                    while(udp.parsePacket() > 0) { udp.read(); }
+                    udp.stop();
+                    delay(50);
+                    udp.begin(udpPort);
                     
                     showReadyScreen();
                     
@@ -847,7 +851,9 @@ void loop() {
             currentState = READY;
             pc_port = 0;
             
-            while(udp.parsePacket() > 0) { udp.read(); }
+            udp.stop();
+            delay(50);
+            udp.begin(udpPort);
             
             M5Cardputer.Display.clear();
             drawMessage("DISCONNECTED", "Stream stopped.", "Press 'G' to inject again", ORANGE);
