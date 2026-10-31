@@ -1,112 +1,113 @@
-![Version](https://img.shields.io/badge/Version-1.1_ADV-blue)
+![Version](https://img.shields.io/badge/Version-1.2_ADV-blue)
 ![Hardware](https://img.shields.io/badge/Hardware-Cardputer-orange)
 ![Platform](https://img.shields.io/badge/Platform-M5Stack-red)
 ![License](https://img.shields.io/badge/License-CC_BY--NC_4.0-red)
 [![Boosty](https://img.shields.io/badge/Support-Boosty-orange)](https://boosty.to/zeloksa)
+[![M5Burner](https://img.shields.io/badge/Web_Flasher-burner.m5stack.com-brightgreen)](https://burner.m5stack.com)
 
-# 📡 WiFi Remote Display ADV (V1.1)
+# 📡 WiFi Remote Display ADV (V1.2)
 
-**WiFi Remote Display ADV V1.1** is an ultra-low latency screen mirroring payload tool strictly optimized for the **M5Stack Cardputer ADV**. It seamlessly injects a Python-based UDP streaming engine into a target Windows PC via USB HID and receives high-speed, adaptive-quality desktop video over a local Wi-Fi network. 
-
-*(Note: Remote HID control features, such as remote mouse and keyboard inputs, are planned for future updates!)*
+**WiFi Remote Display ADV V1.2** is a low-latency wireless secondary display and screen mirroring tool built for the **M5Stack Cardputer / Cardputer ADV**. It deploys a lightweight Python UDP capture script to a Windows 10/11 PC over USB HID and streams live desktop video to the Cardputer over 2.4GHz Wi-Fi.
 
 > [!IMPORTANT]
-> **Source Code Status:** This project is Source-Available for Non-Commercial use. You are welcome to inspect, modify, and contribute to the code on GitHub.
-> **Distribution:** Source code and binary (`.bin`) via the **Releases** tab and M5Burner.
+> **Source Code Status:** Source-Available for Non-Commercial use. Feel free to inspect, modify, and contribute to the repository.
+> **Distribution:** Source code and precompiled `.bin` firmware are available in the **Releases** tab and via the official M5Stack Web Burner at **[burner.m5stack.com](https://burner.m5stack.com)**.
 
 > [!NOTE]
-> **Transparent Injection & Safety:** During the payload delivery, the Cardputer will visibly type the Python script directly into an open PowerShell window. Do not panic! The code is completely open, and the injection **will pause at the very end**. The script will NOT execute automatically—you have full control to read and verify the code on your screen before manually pressing `ENTER` on the PC keyboard to start the stream.
+> **Transparent Injection & Manual Start:** During setup, the Cardputer types the Python script directly into a visible PowerShell window. **The script does not execute automatically.** Typing stops at the final line so you can inspect the code on your monitor before pressing <kbd>ENTER</kbd> on your PC keyboard to start streaming.
 
 ---
 
-## ⚡ V1.1 Technical Highlights
+## ⚡ Technical Overview
 
-* **Zero-Install Payload Injection:** Uses the Cardputer as a USB HID keyboard to automatically open PowerShell, download required dependencies (`mss`, `opencv`), and write a raw Python streaming script directly into the target PC.
-* **True Adaptive Bitrate (ABR):** Mathematically monitors frame render times and UDP packet drops. If lag is detected, it dynamically downgrades JPEG compression quality on the PC side to maintain FPS, automatically recovering quality when the network stabilizes.
-* **Zero-Flicker Direct UI:** Employs a highly optimized screen-drawing algorithm that bypasses heavy RAM buffers. Menu cursors rewrite only changed pixels, saving 64KB of Heap memory and eliminating screen flicker entirely.
-* **Hardware Anti-Deadlock:** Implements deep radio module power cycling (`WiFi.mode(WIFI_OFF)`) to bypass the notorious ESP32 hardware bugs that cause infinite freezing during Wi-Fi scans.
-* **Async Background Scanner:** Real-time, non-blocking Wi-Fi network discovery with a dynamic and responsive UI.
-* **NVS Wi-Fi Memory:** Securely stores your network credentials in the ESP32's non-volatile storage (NVS). Fully autonomous and requires no SD card.
+- **Zero-Install USB HID Deployment:** Acts as a standard USB keyboard to open PowerShell, install required packages (`mss`, `opencv-python`, `numpy`), and write `stream.py` with support for both **US** and **UK** English layouts.
+- **Unsharp Mask & Area Downscaling:** Combines `cv2.INTER_AREA` decimation with a fast OpenCV Unsharp Mask filter (`OFF` / `NORM` / `HIGH`) so small desktop text remains readable on the 240x135 screen.
+- **Smart Cursor & Smooth Follow Mode:** Captures hardware cursor coordinates via Win32 API (`ctypes`), renders a high-contrast pointer that auto-hides after 1.5s of inactivity, and smoothly tracks the cursor when zoomed in.
+- **Locked 15-20 FPS Auto-Quality:** Automatically adjusts JPEG compression between `20%` and `85%` to keep framerate stable between 15 and 20 FPS without overloading the ESP32-S3 UDP buffer.
+- **Hardware-Clipped OSD:** Uses display clipping (`setClipRect`) and a dedicated sprite buffer so top-bar notifications never flicker or get overwritten by incoming video frames.
+- **Non-Blocking Wi-Fi & NVS Storage:** Runs asynchronous background scanning (`WiFi.scanNetworks(true)`), disables modem sleep (`WiFi.setSleep(false)`) for low UDP jitter, and saves credentials in ESP32 NVS flash.
 
 ---
 
-## ⚠️ Important Requirements (Must Read)
+## ⚠️ Requirements
 
-Before running the payload, the target PC **MUST** meet the following criteria, or the injection will fail:
+Before starting the onboarding wizard, make sure the target PC meets these 3 conditions:
 
-1. **Python MUST be Installed:** The target Windows PC (10/11) must have Python 3.x installed and explicitly added to the system `PATH`. The injected script relies on the Python engine to capture and compress the screen.
-2. **SAME Wi-Fi Network:** The Cardputer and the target PC **must** be connected to the exact same local Wi-Fi network for the UDP packets to route successfully.
-3. **English Keyboard Layout:** The target PC's keyboard layout **MUST** be switched to English before pressing `[ G ]` on the Cardputer. If set to another language, the PowerShell injection will type gibberish and fail.
+1. **Python 3 Installed in PATH:** Windows 10/11 must have Python 3.x installed with the **"Add Python to PATH"** option enabled.
+2. **Same 2.4GHz Wi-Fi Network:** Both the Cardputer and the PC must be on the same local network (the ESP32-S3 radio operates on 2.4GHz; the PC can be on 2.4GHz, 5GHz, or Ethernet as long as client isolation is disabled on the router).
+3. **English Keyboard Layout Active:** Switch your PC input language to **English (US or UK)** before starting injection.
 
 ---
 
 ## 🛠 Installation
-### Method 1: M5Burner (Recommended)
-1. Open **M5Burner**.
-2. Search for `WiFi Remote Display ADV` or `Zeloksa`.
-3. Select version **V1.1**.
-4. Burn to your M5Stack Cardputer.
 
-### Method 2: Manual Flashing
-1. Download the source code from GitHub.
-2. Ensure you have the `M5Cardputer`, `Preferences`, and `USBHIDKeyboard` libraries installed in your Arduino IDE.
-3. Compile and flash to your device.
+### Method 1: M5Stack Web Burner (Recommended)
+M5Burner is now available directly in your browser without installing desktop software:
+1. Connect your M5Stack Cardputer to your PC via USB-C.
+2. Open **[burner.m5stack.com](https://burner.m5stack.com)** in Chrome, Edge, or Opera (WebSerial support required).
+3. Search for **`WiFi Remote Display ADV`** or **`Zeloksa`**.
+4. Select **V1.2**, connect your COM port, and click **Burn**.
+
+### Method 2: Manual Compilation (Arduino IDE)
+1. Download `WiFiRemoteDisplayADV.ino` from this repository.
+2. Install the **ESP32 Arduino Core (3.x)** and the `M5Cardputer` library in Arduino IDE.
+3. Select board **M5Cardputer**, set USB Mode to **USB-OTG (TinyUSB)**, and upload.
 
 ---
 
 ## 🕹 Controls
 
-**During Network Setup:**
-* **[ W / S ]** or **[ ; / . ]**: Scroll through the scanned Wi-Fi networks.
-* **[ ENTER ]**: Select a network / Confirm password input.
-* **[ ESC / \` ]**: Cancel password input and return to the live network list.
+### Network Setup & Menus
+| Key | Action |
+| :--- | :--- |
+| <kbd>W</kbd> / <kbd>S</kbd> or <kbd>;</kbd> / <kbd>.</kbd> | Scroll through scanned Wi-Fi networks |
+| <kbd>ENTER</kbd> | Select network / Confirm password / Next step |
+| <kbd>ESC</kbd> (<kbd>`</kbd>) | Cancel password input / Abort USB injection |
+| <kbd>G</kbd> | Launch 5-Step Onboarding & Payload Injection |
+| <kbd>DEL</kbd> | Wipe saved Wi-Fi credentials from NVS and reboot |
 
-**System Ready Menu:**
-* **[ G ]**: Start Onboarding & Payload Injection.
-* **[ DEL ]**: Hard Reset Wi-Fi (Erases saved NVS credentials and reboots).
+### Live Stream Controls
+| Key | Action |
+| :--- | :--- |
+| <kbd>=</kbd> / <kbd>-</kbd> | Zoom In / Zoom Out (up to 20x) |
+| <kbd>SPACE</kbd> | Instant Zoom Reset (`1x` full screen) |
+| <kbd>;</kbd> <kbd>.</kbd> <kbd>,</kbd> <kbd>/</kbd> | Pan camera Up, Down, Left, Right |
+| <kbd>F</kbd> | Toggle **Follow Mouse** mode (auto-tracks cursor when zoomed) |
+| <kbd>1</kbd> | Cycle Sharpness filter (`NORM` -> `HIGH` -> `OFF`) |
+| <kbd>P</kbd> | Pause / Freeze current frame on screen |
+| <kbd>B</kbd> | Cycle display backlight brightness (`25%` / `50%` / `75%` / `100%`) |
+| <kbd>M</kbd> | Switch active PC monitor (multi-display setups) |
+| <kbd>I</kbd> | Show live stream telemetry (`FPS`, `Quality %`, `Wi-Fi RSSI dBm`) |
+| <kbd>0</kbd> / <kbd>9</kbd> | Increase / Decrease speaker beep volume |
+| <kbd>ESC</kbd> (<kbd>`</kbd>) / <kbd>DEL</kbd> | Stop stream, terminate PC script, and return to Ready screen |
 
-**During Injection (Onboarding):**
-* **[ ESC / \` ]** or **[ DEL ]**: Instantly abort the USB injection and safely release all PC keys.
-
-**During Streaming:**
-* **[ = ] / [ - ]**: Zoom In / Zoom Out.
-* **[ ; ] / [ . ]**: Pan Camera Up / Down.
-* **[ , ] / [ / ]**: Pan Camera Left / Right.
-* **[ 0 ] / [ 9 ]**: Increase / Decrease Cardputer Speaker Volume (Beep indicators).
-* **[ ESC / \` ]**: Stop stream, kill PC script, and return to Main Menu.
-
----
-
-## 📖 Operational Guide
-
-### 1. Network Setup
-Upon boot, the Cardputer launches an **asynchronous background radio scan**. The network list populates instantly and updates in real-time. Select your Wi-Fi network and input the password. If you make a mistake or select the wrong network, press `[ ESC ]` to safely cancel and return to the live scanner. Once connected, credentials are saved permanently. If you move to a new location, press `[ DEL ]` in the main menu to clear the memory.
-
-### 2. The Onboarding HUD
-Press `[ G ]` to begin the 5-step safety check:
-* **Step 1:** Warns you to physically connect the USB.
-* **Step 2:** Confirms Python is in `PATH`.
-* **Step 3:** Verifies OS compatibility.
-* **Step 4:** Forces you to verify the PC is in the English layout.
-* **Step 5:** Displays the hotkeys for panning and zooming.
-
-### 3. Payload Delivery & Streaming
-Once confirmed, the Cardputer locks its interface and rapidly types out the UDP streaming server script into the target PC's PowerShell. A progress bar tracks the injection. **The injection stops right before execution.** You can review the code on the PC monitor, and when you are ready, press `ENTER` on the PC keyboard to launch the stream. The Cardputer will then automatically catch the `0xAA` JPEG packet headers and begin rendering the live desktop.
+> [!TIP]
+> **First-Zoom Prompt:** The first time you press <kbd>=</kbd> to zoom in during a session, an on-screen prompt will ask if you want to enable automatic cursor tracking (<kbd>ENTER</kbd> for Yes, <kbd>ESC</kbd> for No). You can toggle this anytime with <kbd>F</kbd>.
 
 ---
 
-## 🆕 Release Notes: What's New in V1.1
-* **Async Wi-Fi Scanner:** The network scanner now runs in the background. Networks appear instantly and update in real-time without freezing the screen.
-* **New Password UI:** Completely redesigned the password input screen for a cleaner, more professional look.
-* **Password Loop Fix:** Fixed a critical bug where a failed connection (wrong password or incompatible 5GHz network) would trap the user in an infinite loop.
-* **Cancel Input:** You can now press `[ ESC ]` to safely abort password entry and return to the network list without losing the previously scanned networks.
-* **Anti-Ghosting Keyboard:** Completely rewrote the typing engine. Keys no longer stick or double-type when typing fast.
+## 📖 Quick Start Guide
+
+1. **Connect to Wi-Fi:** Turn on the Cardputer, select your 2.4GHz network from the live list, and type your password.
+2. **Run Onboarding:** Press <kbd>G</kbd> on the `SYSTEM READY` screen and follow the 5 on-screen prompts (including selecting **US `<kbd>S</kbd>`** or **UK `<kbd>K</kbd>`** keyboard layout in Step 4).
+3. **Start the Stream:** Wait for the progress bar to finish typing the script into PowerShell, then press <kbd>ENTER</kbd> on your **PC keyboard** to start streaming.
+
+---
+
+## 🆕 Changelog: What's New in V1.2
+
+- **Auto-Hiding Cursor & Smooth Follow (<kbd>F</kbd>):** Renders the PC mouse pointer on the Cardputer screen, hides it automatically after 1.5 seconds of inactivity, and smoothly pans the zoomed camera to follow the cursor.
+- **First-Zoom Tracking Prompt:** Added an on-screen prompt when zooming in for the first time to quickly enable or skip automatic cursor tracking.
+- **Text Sharpening Filter (<kbd>1</kbd>):** Added a 3-mode sharpness toggle (`NORM` / `HIGH` / `OFF`) so small desktop fonts and icons stay crisp on the 240x135 display.
+- **Multi-Monitor Support (<kbd>M</kbd>):** Switch between all connected monitors on the host PC directly from the Cardputer keyboard.
+- **Frame Pause (<kbd>P</kbd>), Brightness (<kbd>B</kbd>) & Quick Reset (<kbd>SPACE</kbd>):** Freeze the live image to read text comfortably, cycle screen backlight brightness on the fly, and reset zoom back to `1x` with a single key.
+- **Live Telemetry (<kbd>I</kbd>) & Solid OSD:** Check real-time `FPS`, `Quality %`, and `Wi-Fi RSSI` on demand via the top notification bar without screen flicker.
 
 ---
 
 ## ☕ Support the Project
-Support the development of advanced diagnostic tools and payloads for the Cardputer ecosystem:
-* **[https://boosty.to/zeloksa](https://boosty.to/zeloksa)**
+If you find this project useful, you can support future Cardputer tools and updates here:
+- **[Boosty — Engineer Zeloksa](https://boosty.to/zeloksa)**
 
 ---
-*Developed by Engineer Zeloksa. Strictly optimized for Cardputer ADV.*
+*Developed by Engineer Zeloksa. Built for M5Stack Cardputer & Cardputer ADV.*
