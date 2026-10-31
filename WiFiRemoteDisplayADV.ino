@@ -25,7 +25,16 @@ unsigned long last_key_time = 0;
 int low_fps_streak = 0;
 int high_fps_streak = 0;
 unsigned long last_quality_change = 0; 
-int current_quality = 50; 
+int current_quality = 70; 
+int sharp_mode = 1;
+int brightness = 128;
+int fps = 0;
+bool key_lock = false;
+bool follow_mouse = false;
+bool is_paused = false;
+bool ask_follow = true;
+bool wait_zoom_frame = false;
+unsigned long zoom_ask_time = 0;
 
 bool is_uk_layout = false;
 
@@ -66,6 +75,13 @@ void showOSD(String text, uint32_t color = YELLOW) {
     osd_text = text;
     osd_color = color;
     osd_timer = millis();
+    if (currentState == STREAMING) {
+        osd.fillSprite(0x1082);
+        osd.setTextColor(osd_color);
+        osd.setTextDatum(middle_center);
+        osd.drawString(osd_text, 120, 10);
+        osd.pushSprite(0, 0);
+    }
 }
 
 void drawWatermark() {
@@ -191,7 +207,11 @@ String inputText(String prompt_ssid) {
                     M5Cardputer.Display.fillRect(12, 57, 216, 26, BLACK);
                     M5Cardputer.Display.setCursor(startX, startY);
                     M5Cardputer.Display.setTextColor(WHITE);
-                    M5Cardputer.Display.print(input_buffer);
+                    if (input_buffer.length() > 22) {
+                        M5Cardputer.Display.print(input_buffer.substring(input_buffer.length() - 22));
+                    } else {
+                        M5Cardputer.Display.print(input_buffer);
+                    }
                 }
             }
         }
@@ -216,7 +236,7 @@ void drawWiFiList(int selected, int topIndex, bool is_scanning) {
         if (idx == selected) M5Cardputer.Display.fillRect(0, y - 2, 240, 18, DARKGREEN);
         M5Cardputer.Display.setCursor(5, y);
         M5Cardputer.Display.setTextColor(WHITE);
-        M5Cardputer.Display.print(saved_networks[idx].ssid);
+        M5Cardputer.Display.print(saved_networks[idx].ssid.substring(0, 16));
         M5Cardputer.Display.print(" ("); M5Cardputer.Display.print(saved_networks[idx].rssi); M5Cardputer.Display.print("dBm)");
     }
 
@@ -236,7 +256,7 @@ void updateWiFiCursor(int old_sel, int new_sel, int topIndex) {
         M5Cardputer.Display.fillRect(0, y - 2, 240, 18, BLACK);
         M5Cardputer.Display.setCursor(5, y);
         M5Cardputer.Display.setTextColor(WHITE);
-        M5Cardputer.Display.print(saved_networks[old_sel].ssid);
+        M5Cardputer.Display.print(saved_networks[old_sel].ssid.substring(0, 16));
         M5Cardputer.Display.print(" ("); M5Cardputer.Display.print(saved_networks[old_sel].rssi); M5Cardputer.Display.print("dBm)");
     }
     if (new_sel >= topIndex && new_sel < topIndex + 5) {
@@ -244,7 +264,7 @@ void updateWiFiCursor(int old_sel, int new_sel, int topIndex) {
         M5Cardputer.Display.fillRect(0, y - 2, 240, 18, DARKGREEN);
         M5Cardputer.Display.setCursor(5, y);
         M5Cardputer.Display.setTextColor(WHITE);
-        M5Cardputer.Display.print(saved_networks[new_sel].ssid);
+        M5Cardputer.Display.print(saved_networks[new_sel].ssid.substring(0, 16));
         M5Cardputer.Display.print(" ("); M5Cardputer.Display.print(saved_networks[new_sel].rssi); M5Cardputer.Display.print("dBm)");
     }
 }
@@ -352,6 +372,62 @@ void sendPCCommand(String cmd) {
     }
 }
 
+void askFollowMousePrompt() {
+    wait_zoom_frame = false;
+    playSound(2500, 50);
+
+    M5Cardputer.Display.fillRect(18, 20, 204, 95, BLACK);
+    M5Cardputer.Display.fillRect(18, 20, 204, 22, PURPLE);
+    M5Cardputer.Display.fillRect(18, 95, 204, 20, 0x18E3);
+    M5Cardputer.Display.drawRect(18, 20, 204, 95, LIGHTGREY);
+
+    M5Cardputer.Display.setTextDatum(middle_center);
+    M5Cardputer.Display.setTextColor(WHITE);
+    M5Cardputer.Display.drawString("FOLLOW CURSOR?", 120, 31);
+    M5Cardputer.Display.drawString("Track mouse auto", 120, 56);
+    M5Cardputer.Display.setTextColor(YELLOW);
+    M5Cardputer.Display.drawString("when zoomed in?", 120, 74);
+
+    M5Cardputer.Display.setTextSize(1);
+    M5Cardputer.Display.setTextColor(GREEN);
+    M5Cardputer.Display.drawString("[ENTER] Yes", 68, 105);
+    M5Cardputer.Display.setTextColor(ORANGE);
+    M5Cardputer.Display.drawString("[ESC] No", 172, 105);
+    M5Cardputer.Display.setTextSize(1.5);
+    M5Cardputer.Display.setTextDatum(top_left);
+
+    while (M5Cardputer.Keyboard.isPressed()) { M5Cardputer.update(); delay(10); }
+
+    while (true) {
+        M5Cardputer.update();
+        if (udp.parsePacket() > 0) udp.flush();
+
+        if (M5Cardputer.Keyboard.isChange() && M5Cardputer.Keyboard.isPressed()) {
+            Keyboard_Class::KeysState st = M5Cardputer.Keyboard.keysState();
+            if (st.enter || M5Cardputer.Keyboard.isKeyPressed('y')) {
+                follow_mouse = true;
+                sendPCCommand("F1");
+                showOSD("FOLLOW MOUSE: ON", CYAN);
+                break;
+            }
+            if (M5Cardputer.Keyboard.isKeyPressed('`') || st.del || M5Cardputer.Keyboard.isKeyPressed('n')) {
+                follow_mouse = false;
+                sendPCCommand("F0");
+                showOSD("FOLLOW MOUSE: OFF", YELLOW);
+                break;
+            }
+        }
+        delay(10);
+    }
+
+    while (M5Cardputer.Keyboard.isPressed()) { M5Cardputer.update(); delay(10); }
+    current_frame_id = 0;
+    chunks_count = 0;
+    last_packet_time = millis();
+    last_frame_time = millis();
+    last_key_time = millis();
+}
+
 bool waitEnterOrEsc(bool showBlink = true) {
     bool flash = true;
     unsigned long last_flash = millis();
@@ -382,7 +458,7 @@ bool waitEnterOrEsc(bool showBlink = true) {
     }
 }
 
-bool safeDelay(int ms) {
+bool safeDelay(unsigned long ms) {
     unsigned long start = millis();
     while (millis() - start < ms) {
         M5Cardputer.update();
@@ -501,26 +577,36 @@ step4_start:
     M5Cardputer.Display.drawString("STEP 5: CONTROLS", 120, 12);
     
     M5Cardputer.Display.setTextDatum(top_left);
-    M5Cardputer.Display.setCursor(5, 35);
+    M5Cardputer.Display.setCursor(5, 28);
     M5Cardputer.Display.setTextColor(LIGHTGREY); M5Cardputer.Display.print("ZOOM: ");
-    M5Cardputer.Display.setTextColor(YELLOW);    M5Cardputer.Display.print("[=]");
-    M5Cardputer.Display.setTextColor(WHITE);     M5Cardputer.Display.print(" In  ");
-    M5Cardputer.Display.setTextColor(YELLOW);    M5Cardputer.Display.print("[-]");
-    M5Cardputer.Display.setTextColor(WHITE);     M5Cardputer.Display.print(" Out");
+    M5Cardputer.Display.setTextColor(YELLOW);    M5Cardputer.Display.print("[=][-]");
+    M5Cardputer.Display.setTextColor(WHITE);     M5Cardputer.Display.print(" Rst:");
+    M5Cardputer.Display.setTextColor(YELLOW);    M5Cardputer.Display.print("[SPC]");
     
-    M5Cardputer.Display.setCursor(5, 60);
+    M5Cardputer.Display.setCursor(5, 44);
     M5Cardputer.Display.setTextColor(LIGHTGREY); M5Cardputer.Display.print("MOVE: ");
-    M5Cardputer.Display.setTextColor(YELLOW);    M5Cardputer.Display.print("[;]");
-    M5Cardputer.Display.setTextColor(WHITE);     M5Cardputer.Display.print(" Up  ");
-    M5Cardputer.Display.setTextColor(YELLOW);    M5Cardputer.Display.print("[.]");
-    M5Cardputer.Display.setTextColor(WHITE);     M5Cardputer.Display.print(" Dwn");
+    M5Cardputer.Display.setTextColor(YELLOW);    M5Cardputer.Display.print("[;] [.] [,] [/]");
 
-    M5Cardputer.Display.setCursor(5, 85);
-    M5Cardputer.Display.setTextColor(LIGHTGREY); M5Cardputer.Display.print("      "); 
-    M5Cardputer.Display.setTextColor(YELLOW);    M5Cardputer.Display.print("[,]");
-    M5Cardputer.Display.setTextColor(WHITE);     M5Cardputer.Display.print(" Lft ");
-    M5Cardputer.Display.setTextColor(YELLOW);    M5Cardputer.Display.print("[/]");
-    M5Cardputer.Display.setTextColor(WHITE);     M5Cardputer.Display.print(" Rgt");
+    M5Cardputer.Display.setCursor(5, 60);
+    M5Cardputer.Display.setTextColor(LIGHTGREY); M5Cardputer.Display.print("MODE: "); 
+    M5Cardputer.Display.setTextColor(YELLOW);    M5Cardputer.Display.print("[F]");
+    M5Cardputer.Display.setTextColor(WHITE);     M5Cardputer.Display.print(" Mouse ");
+    M5Cardputer.Display.setTextColor(YELLOW);    M5Cardputer.Display.print("[1]");
+    M5Cardputer.Display.setTextColor(WHITE);     M5Cardputer.Display.print(" Shrp");
+
+    M5Cardputer.Display.setCursor(5, 76);
+    M5Cardputer.Display.setTextColor(LIGHTGREY); M5Cardputer.Display.print("VIEW: ");
+    M5Cardputer.Display.setTextColor(YELLOW);    M5Cardputer.Display.print("[P]");
+    M5Cardputer.Display.setTextColor(WHITE);     M5Cardputer.Display.print(" Pause ");
+    M5Cardputer.Display.setTextColor(YELLOW);    M5Cardputer.Display.print("[B]");
+    M5Cardputer.Display.setTextColor(WHITE);     M5Cardputer.Display.print(" Brt");
+
+    M5Cardputer.Display.setCursor(5, 92);
+    M5Cardputer.Display.setTextColor(LIGHTGREY); M5Cardputer.Display.print("MISC: ");
+    M5Cardputer.Display.setTextColor(YELLOW);    M5Cardputer.Display.print("[M]");
+    M5Cardputer.Display.setTextColor(WHITE);     M5Cardputer.Display.print(" Mon   ");
+    M5Cardputer.Display.setTextColor(YELLOW);    M5Cardputer.Display.print("[I]");
+    M5Cardputer.Display.setTextColor(WHITE);     M5Cardputer.Display.print(" Info");
 
     drawWatermark();
     if (!waitEnterOrEsc(true)) return false;
@@ -544,18 +630,22 @@ bool injectPayload() {
     
     {
         String py = String("Set-Content -Path stream.py -Value @\"\n"
-                    "import mss, cv2, socket, numpy as np, struct, math, time, sys, os\n"
-                    "UDP_IP = '") + WiFi.localIP().toString() + String("'\n"
-                    R"=====(UDP_PORT = 1234
+                    "import mss, cv2, socket, numpy as np, struct, math, time, sys, os, ctypes\n"
+            "UDP_IP = '") + WiFi.localIP().toString() + String("'\n"
+            R"=====(UDP_PORT = 1234
+pt = (ctypes.c_long * 2)()
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 2097152)
 sock.setblocking(False)
 sct = mss.mss()
-mon = sct.monitors[1]
+mi = 1
+mon = sct.monitors[mi]
 f_id = 0
-z, q, px, py_pos = 1.0, 50, 0.5, 0.5
+z, q, px, py_pos, sh, flw = 1.0, 70, 0.5, 0.5, 1, False
+lx, ly, mt = -1, -1, 0.0
 w, h = mon['width'], mon['height']
 while True:
+    t0 = time.perf_counter()
     try:
         while True:
             d, addr = sock.recvfrom(64)
@@ -563,30 +653,55 @@ while True:
             if c == 'STOP': os._exit(0)
             elif c == 'Z+': z = max(0.05, z - 0.05)
             elif c == 'Z-': z = min(1.0, z + 0.05)
-            elif c == 'Q+': q = min(100, q + 10)
-            elif c == 'Q-': q = max(10, q - 10)
-            elif c == 'U': py_pos = max(0.0, py_pos - z/2)
-            elif c == 'D': py_pos = min(1.0, py_pos + z/2)
-            elif c == 'L': px = max(0.0, px - z/2)
-            elif c == 'R': px = min(1.0, px + z/2)
+            elif c == 'Z0': z, px, py_pos = 1.0, 0.5, 0.5
+            elif c[0] == 'Q': q = max(20, min(85, int(c[1:])))
+            elif c[0] == 'S': sh = int(c[1:]) % 3
+            elif c == 'F1': flw = True
+            elif c == 'F0': flw = False
+            elif c == 'M' and len(sct.monitors) > 2:
+                mi = (mi % (len(sct.monitors) - 1)) + 1
+                mon = sct.monitors[mi]
+                w, h = mon['width'], mon['height']
+            elif c == 'U': py_pos = max(0.0, py_pos - z*0.25)
+            elif c == 'D': py_pos = min(1.0, py_pos + z*0.25)
+            elif c == 'L': px = max(0.0, px - z*0.25)
+            elif c == 'R': px = min(1.0, px + z*0.25)
     except: pass
-    img = np.array(sct.grab(mon))
+    ctypes.windll.user32.GetCursorPos(pt)
+    mx, my = pt[0] - mon['left'], pt[1] - mon['top']
+    if mx != lx or my != ly:
+        lx, ly, mt = mx, my, t0
+    raw = np.array(sct.grab(mon))
+    cx, cy, cw, ch = 0, 0, w, h
     if z < 1.0:
         cw, ch = int(w * z), int(h * z)
-        max_x, max_y = w - cw, h - ch
-        cx, cy = int(px * max_x), int(py_pos * max_y)
-        img = img[cy : cy + ch, cx : cx + cw]
-    img = cv2.resize(img, (240, 135), interpolation=cv2.INTER_LINEAR)
-    real_q = int(q * 0.85) if q > 10 else 10
-    _, buf = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, real_q, cv2.IMWRITE_JPEG_OPTIMIZE, 1])
+        rx_m, ry_m = max(1, w - cw), max(1, h - ch)
+        if flw and 0 <= mx < w and 0 <= my < h:
+            px += (min(1.0, max(0.0, (mx - cw // 2) / rx_m)) - px) * 0.35
+            py_pos += (min(1.0, max(0.0, (my - ch // 2) / ry_m)) - py_pos) * 0.35
+        cx, cy = int(px * rx_m), int(py_pos * ry_m)
+        img = raw[cy : cy + ch, cx : cx + cw, :3]
+    else:
+        img = raw[:, :, :3]
+    img = cv2.resize(img, (240, 135), interpolation=cv2.INTER_AREA)
+    if t0 - mt < 1.5:
+        rx, ry = int((mx - cx) * 240 / max(1, cw)), int((my - cy) * 135 / max(1, ch))
+        if 0 <= rx < 240 and 0 <= ry < 135:
+            cv2.circle(img, (rx, ry), 3, (0, 0, 0), -1)
+            cv2.circle(img, (rx, ry), 2, (0, 255, 255), -1)
+    if sh > 0:
+        amt = 0.35 if sh == 1 else 0.75
+        img = cv2.addWeighted(img, 1.0 + amt, cv2.GaussianBlur(img, (0, 0), 1.0), -amt, 0)
+    _, buf = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, q, cv2.IMWRITE_JPEG_OPTIMIZE, 1])
     data = buf.tobytes()
     chunks = math.ceil(len(data) / 1400)
     f_id = (f_id + 1) & 0xFFFFFFFF
     for i in range(chunks):
         h_bytes = struct.pack('<B I B B', 0xAA, f_id, chunks, i)
         sock.sendto(h_bytes + data[i*1400:(i+1)*1400], (UDP_IP, UDP_PORT))
-    delay_time = 0.035 if q >= 80 else (0.025 if q >= 60 else 0.015)
-    time.sleep(delay_time)
+    dt = time.perf_counter() - t0
+    if dt < 0.055:
+        time.sleep(0.055 - dt)
 "@
 python stream.py; exit)=====");
 
@@ -653,7 +768,8 @@ void setup() {
     M5Cardputer.Display.setTextSize(1.5);
     
     M5Cardputer.Speaker.setVolume(speaker_volume);
-    osd.createSprite(240, 20); 
+    osd.createSprite(240, 20);
+    osd.setTextSize(1.5);
 
     Keyboard.begin(); 
     USB.begin();
@@ -715,6 +831,7 @@ void setup() {
         }
     }
 
+    WiFi.setSleep(false);
     currentState = READY;
     showReadyScreen();
     udp.begin(udpPort);
@@ -754,8 +871,15 @@ void loop() {
                     last_good_frame_time = millis();
                     last_quality_change = millis();
                     
-                    current_quality = 50;
+                    current_quality = 70;
                     current_zoom = 1.0;
+                    sharp_mode = 1;
+                    key_lock = false;
+                    follow_mouse = false;
+                    is_paused = false;
+                    ask_follow = true;
+                    wait_zoom_frame = false;
+                    fps = 0;
                     low_fps_streak = 0;
                     high_fps_streak = 0;
                     
@@ -785,31 +909,89 @@ void loop() {
     if (currentState == STREAMING) {
         Keyboard_Class::KeysState status = M5Cardputer.Keyboard.keysState();
 
-        if (millis() - last_key_time > 100) {
-            bool key_pressed = false;
-
-            if (M5Cardputer.Keyboard.isKeyPressed('=')) { sendPCCommand("Z+"); current_zoom = max(0.05f, current_zoom - 0.05f); showOSD("ZOOM: " + String((int)(1.0/current_zoom)) + "x"); key_pressed = true; }
-            if (M5Cardputer.Keyboard.isKeyPressed('-')) { sendPCCommand("Z-"); current_zoom = min(1.0f, current_zoom + 0.05f); showOSD(current_zoom >= 1.0f ? "ZOOM OUT" : "ZOOM: " + String((int)(1.0/current_zoom)) + "x"); key_pressed = true; }
-            
-            if (M5Cardputer.Keyboard.isKeyPressed(';')) { sendPCCommand("U"); showOSD("PAN UP"); key_pressed = true; }
-            if (M5Cardputer.Keyboard.isKeyPressed('.')) { sendPCCommand("D"); showOSD("PAN DOWN"); key_pressed = true; }
-            if (M5Cardputer.Keyboard.isKeyPressed(',')) { sendPCCommand("L"); showOSD("PAN LEFT"); key_pressed = true; }
-            if (M5Cardputer.Keyboard.isKeyPressed('/')) { sendPCCommand("R"); showOSD("PAN RIGHT"); key_pressed = true; }
-            
-            if (M5Cardputer.Keyboard.isKeyPressed('0')) { 
+        if (!M5Cardputer.Keyboard.isPressed()) {
+            key_lock = false;
+        } else if (!key_lock) {
+            bool trig = true;
+            if (M5Cardputer.Keyboard.isKeyPressed('1')) {
+                sharp_mode = (sharp_mode + 1) % 3;
+                sendPCCommand("S" + String(sharp_mode));
+                showOSD(sharp_mode == 0 ? "SHARP: OFF" : (sharp_mode == 1 ? "SHARP: NORM" : "SHARP: HIGH"), GREEN);
+            }
+            else if (M5Cardputer.Keyboard.isKeyPressed('f')) {
+                follow_mouse = !follow_mouse;
+                ask_follow = false;
+                sendPCCommand(follow_mouse ? "F1" : "F0");
+                showOSD(follow_mouse ? "FOLLOW MOUSE: ON" : "FOLLOW MOUSE: OFF", CYAN);
+            }
+            else if (M5Cardputer.Keyboard.isKeyPressed('m')) {
+                sendPCCommand("M");
+                showOSD("SWITCH MONITOR", ORANGE);
+            }
+            else if (M5Cardputer.Keyboard.isKeyPressed('p')) {
+                is_paused = !is_paused;
+                showOSD(is_paused ? "STREAM PAUSED" : "STREAM RESUMED", is_paused ? ORANGE : GREEN);
+            }
+            else if (M5Cardputer.Keyboard.isKeyPressed('b')) {
+                brightness = (brightness >= 240) ? 64 : (brightness + 64);
+                M5Cardputer.Display.setBrightness(brightness);
+                showOSD("BRIGHT: " + String((brightness * 100) / 255) + "%", YELLOW);
+            }
+            else if (status.space) {
+                current_zoom = 1.0f;
+                sendPCCommand("Z0");
+                showOSD("ZOOM RESET: 1x", CYAN);
+            }
+            else if (M5Cardputer.Keyboard.isKeyPressed('i')) {
+                showOSD(String(fps) + "FPS Q:" + String(current_quality) + "% " + String(WiFi.RSSI()) + "dBm", WHITE);
+            }
+            else if (M5Cardputer.Keyboard.isKeyPressed('0')) { 
                 speaker_volume = min(255, speaker_volume + 25); 
                 M5Cardputer.Speaker.setVolume(speaker_volume); 
                 showOSD("SPK VOL: " + String((speaker_volume * 100) / 255) + "%"); 
-                key_pressed = true; 
             }
-            if (M5Cardputer.Keyboard.isKeyPressed('9')) { 
+            else if (M5Cardputer.Keyboard.isKeyPressed('9')) { 
                 speaker_volume = max(0, speaker_volume - 25); 
                 M5Cardputer.Speaker.setVolume(speaker_volume); 
                 showOSD("SPK VOL: " + String((speaker_volume * 100) / 255) + "%"); 
-                key_pressed = true; 
+            }
+            else {
+                trig = false;
             }
 
+            if (trig) {
+                key_lock = true;
+                playSound(4000, 15);
+            }
+        }
+
+        if (millis() - last_key_time > 100) {
+            bool key_pressed = false;
+
+            if (M5Cardputer.Keyboard.isKeyPressed('=')) {
+                sendPCCommand("Z+");
+                current_zoom = max(0.05f, current_zoom - 0.05f);
+                if (ask_follow) {
+                    ask_follow = false;
+                    wait_zoom_frame = true;
+                    zoom_ask_time = millis();
+                } else {
+                    showOSD("ZOOM: " + String((int)(1.0f / current_zoom)) + "x");
+                }
+                key_pressed = true;
+            }
+            if (M5Cardputer.Keyboard.isKeyPressed('-')) { sendPCCommand("Z-"); current_zoom = min(1.0f, current_zoom + 0.05f); showOSD(current_zoom >= 1.0f ? "ZOOM: 1x" : "ZOOM: " + String((int)(1.0f / current_zoom)) + "x"); key_pressed = true; }
+            
+            if (M5Cardputer.Keyboard.isKeyPressed(';')) { if (follow_mouse) { follow_mouse = false; sendPCCommand("F0"); } sendPCCommand("U"); showOSD("PAN UP"); key_pressed = true; }
+            if (M5Cardputer.Keyboard.isKeyPressed('.')) { if (follow_mouse) { follow_mouse = false; sendPCCommand("F0"); } sendPCCommand("D"); showOSD("PAN DOWN"); key_pressed = true; }
+            if (M5Cardputer.Keyboard.isKeyPressed(',')) { if (follow_mouse) { follow_mouse = false; sendPCCommand("F0"); } sendPCCommand("L"); showOSD("PAN LEFT"); key_pressed = true; }
+            if (M5Cardputer.Keyboard.isKeyPressed('/')) { if (follow_mouse) { follow_mouse = false; sendPCCommand("F0"); } sendPCCommand("R"); showOSD("PAN RIGHT"); key_pressed = true; }
+
             if (key_pressed) last_key_time = millis();
+        }
+
+        if (wait_zoom_frame && (millis() - zoom_ask_time > 250)) {
+            askFollowMousePrompt();
         }
 
         if (M5Cardputer.Keyboard.isKeyPressed('`') || status.del) {
@@ -820,6 +1002,7 @@ void loop() {
             drawMessage("EXIT SCRIPT?", "Press ENTER to confirm", "Press ESC (`) to cancel", RED);
             while (true) {
                 M5Cardputer.update();
+                if (udp.parsePacket() > 0) udp.flush();
                 Keyboard_Class::KeysState confirm_status = M5Cardputer.Keyboard.keysState();
                 
                 if (confirm_status.enter) {
@@ -841,9 +1024,14 @@ void loop() {
                     while(M5Cardputer.Keyboard.isKeyPressed('`') || M5Cardputer.Keyboard.keysState().del) {
                         M5Cardputer.update(); delay(10);
                     }
+                    is_paused = false;
+                    current_frame_id = 0;
+                    chunks_count = 0;
+                    last_packet_time = millis();
+                    last_frame_time = millis();
                     break;
                 }
-                delay(50);
+                delay(10);
             }
         }
 
@@ -862,10 +1050,9 @@ void loop() {
         }
 
         if (pc_port != 0 && (millis() - last_frame_time > 1500)) {
-            if (current_quality > 10 && (millis() - last_quality_change > 2000)) {
-                current_quality = max(10, current_quality - 10);
-                sendPCCommand("Q-");
-                showOSD("CRITICAL FIX: " + String(current_quality) + "%", RED);
+            if (current_quality > 20 && (millis() - last_quality_change > 1500)) {
+                current_quality = max(20, current_quality - 10);
+                sendPCCommand("Q" + String(current_quality));
                 last_quality_change = millis();
                 last_frame_time = millis(); 
             }
@@ -881,6 +1068,11 @@ void loop() {
         uint8_t udp_rx_buffer[1500];
         
         while ((udp_packet_size = udp.parsePacket()) > 0) {
+            if (udp_packet_size <= 7 || udp_packet_size >= 1500) {
+                udp.flush();
+                continue;
+            }
+
             last_packet_time = millis();
             last_chunk_time = millis();
             pc_ip = udp.remoteIP();
@@ -894,6 +1086,8 @@ void loop() {
                 uint8_t total_chunks_in_frame = udp_rx_buffer[5];
                 uint8_t current_chunk_idx = udp_rx_buffer[6];
 
+                if (total_chunks_in_frame == 0 || total_chunks_in_frame > MAX_CHUNKS) continue;
+
                 if (f_id != current_frame_id) {
                     current_frame_id = f_id;
                     current_total_chunks = total_chunks_in_frame;
@@ -902,9 +1096,9 @@ void loop() {
                     memset(chunks_received, 0, sizeof(chunks_received));
                 }
 
-                if (current_chunk_idx < MAX_CHUNKS && !chunks_received[current_chunk_idx]) {
-                    uint16_t chunk_payload_size = udp_packet_size - 7;
-                    uint16_t offset = current_chunk_idx * CHUNK_SIZE;
+                if (current_chunk_idx < current_total_chunks && !chunks_received[current_chunk_idx]) {
+                    uint32_t chunk_payload_size = udp_packet_size - 7;
+                    uint32_t offset = current_chunk_idx * CHUNK_SIZE;
 
                     if (offset + chunk_payload_size <= MAX_JPG_SIZE) {
                         memcpy(&jpg_buffer[offset], &udp_rx_buffer[7], chunk_payload_size);
@@ -916,50 +1110,50 @@ void loop() {
                         }
 
                         if (chunks_count == current_total_chunks) {
-                            M5Cardputer.Display.drawJpg(jpg_buffer, total_jpg_size, 0, 0);
+                            if (!is_paused) {
+                                bool osd_active = (millis() - osd_timer < 1500);
+                                if (osd_active) M5Cardputer.Display.setClipRect(0, 20, 240, 115);
+                                M5Cardputer.Display.drawJpg(jpg_buffer, total_jpg_size, 0, 0);
+                                if (osd_active) M5Cardputer.Display.clearClipRect();
+                            }
+                            if (wait_zoom_frame) {
+                                askFollowMousePrompt();
+                                break;
+                            }
+
                             last_frame_time = millis(); 
                             
                             unsigned long frame_duration = millis() - last_good_frame_time;
                             last_good_frame_time = millis();
+                            if (frame_duration > 0) fps = 1000 / frame_duration;
 
-                            if (millis() - last_quality_change > 2000) {
-                                if (frame_duration > 120) {
+                            if (millis() - last_quality_change > 1500) {
+                                if (frame_duration > 72) {
                                     low_fps_streak++;
                                     high_fps_streak = 0;
                                 } 
-                                else if (frame_duration < 45) {
+                                else if (frame_duration <= 68) {
                                     high_fps_streak++;
                                     low_fps_streak = 0;
                                 }
 
-                                if (low_fps_streak >= 5) {
-                                    if (current_quality > 10) {
-                                        current_quality -= 10;
-                                        sendPCCommand("Q-");
-                                        showOSD("LAG FIX: " + String(current_quality) + "%", RED);
-                                        playSound(2000, 50); 
+                                if (low_fps_streak >= 4) {
+                                    if (current_quality > 20) {
+                                        current_quality = max(20, current_quality - 5);
+                                        sendPCCommand("Q" + String(current_quality));
                                         last_quality_change = millis();
-                                        low_fps_streak = 0;
                                     }
+                                    low_fps_streak = 0;
                                 }
                                 
-                                if (high_fps_streak >= 60) {
-                                    if (current_quality < 100) {
-                                        current_quality += 5;
-                                        sendPCCommand("Q+");
-                                        showOSD("SMOOTH: " + String(current_quality) + "%", GREEN);
+                                if (high_fps_streak >= 35) {
+                                    if (current_quality < 85) {
+                                        current_quality = min(85, current_quality + 5);
+                                        sendPCCommand("Q" + String(current_quality));
                                         last_quality_change = millis();
-                                        high_fps_streak = 0;
                                     }
+                                    high_fps_streak = 0;
                                 }
-                            }
-                            
-                            if (millis() - osd_timer < 1500) {
-                                osd.fillSprite(BLACK); 
-                                osd.setTextColor(osd_color); 
-                                osd.setTextDatum(middle_center);
-                                osd.drawString(osd_text, 120, 10);
-                                osd.pushSprite(0, 0, BLACK); 
                             }
                             break; 
                         }
