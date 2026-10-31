@@ -89,7 +89,7 @@ M5Burner is now available directly in your browser without installing desktop so
 ## 📖 Quick Start Guide
 
 1. **Connect to Wi-Fi:** Turn on the Cardputer, select your 2.4GHz network from the live list, and type your password.
-2. **Run Onboarding:** Press <kbd>G</kbd> on the `SYSTEM READY` screen and follow the 5 on-screen prompts (including selecting **US `<kbd>S</kbd>`** or **UK `<kbd>K</kbd>`** keyboard layout in Step 4).
+2. **Run Onboarding:** Press <kbd>G</kbd> on the `SYSTEM READY` screen and follow the 5 on-screen prompts (including selecting **US  <kbd>S</kbd> or **UK <kbd>K</kbd> keyboard layout in Step 4).
 3. **Start the Stream:** Wait for the progress bar to finish typing the script into PowerShell, then press <kbd>ENTER</kbd> on your **PC keyboard** to start streaming.
 
 ---
